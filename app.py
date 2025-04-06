@@ -1,25 +1,26 @@
 from flask import Flask, render_template, request, jsonify
 import os
+import json
 from werkzeug.utils import secure_filename
 import uuid
-import json
 
 app = Flask(__name__)
 
-# Folders
 UPLOAD_FOLDER = 'uploads'
-POSTS_FOLDER = 'pending_posts'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(POSTS_FOLDER, exist_ok=True)
-
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# --- Home Page (for web form if needed) ---
+DATA_FILE = 'posts.json'
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, 'w') as f:
+        json.dump([], f)
+
+# 🔹 Reviewer Web Form Route
 @app.route('/')
 def index():
-    return render_template('form.html')  # Optional form.html
+    return render_template('form.html')
 
-# --- Legacy web form submission route ---
+# 🔹 Handle Form Submission from Reviewer Web Page
 @app.route('/submit', methods=['POST'])
 def submit():
     text_data = request.form.get('text')
@@ -28,59 +29,84 @@ def submit():
     if uploaded_file:
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_file.filename)
         uploaded_file.save(file_path)
+    else:
+        file_path = None
 
     print("Text:", text_data)
-    print("File saved to:", file_path if uploaded_file else "No file uploaded")
+    print("File saved to:", file_path if file_path else "No file uploaded")
 
     return "Submitted successfully!"
 
-# --- Route for reviewer GUI app ---
+# 🔹 Reviewer GUI App POST Submission
 @app.route('/submit_post', methods=['POST'])
 def submit_post():
     title = request.form.get('title')
     content = request.form.get('content')
     token = request.form.get('token')
 
-    if token != "reviewer_secret":  # Change this later to something private
+    if token != "reviewer_secret":  # 🔐 Replace this with real secret later
         return jsonify({"status": "unauthorized"}), 401
 
     file = request.files.get('file')
     filename = None
     if file:
         filename = secure_filename(file.filename)
-        file.save(os.path.join(UPLOAD_FOLDER, filename))
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
-    # Save post as JSON
-    post_id = str(uuid.uuid4())
-    post_data = {
-        "id": post_id,
+    post = {
+        "id": str(uuid.uuid4()),
         "title": title,
         "content": content,
         "file": filename,
-        "votes": {
-            "owner1": None,
-            "owner2": None,
-            "admin": None
-        }
+        "votes": {}  # will store votes by moderator
     }
 
-    with open(os.path.join(POSTS_FOLDER, f"{post_id}.json"), 'w') as f:
-        json.dump(post_data, f)
+    with open(DATA_FILE, 'r') as f:
+        posts = json.load(f)
 
-    print(f"\n📥 New Post Saved: {post_id}")
-    return jsonify({"status": "success", "post_id": post_id})
+    posts.append(post)
 
-# --- Route for moderator app to fetch all pending posts ---
+    with open(DATA_FILE, 'w') as f:
+        json.dump(posts, f, indent=2)
+
+    print(f"\n📥 New Submission\nTitle: {title}\nContent: {content}\nFile: {filename}")
+    return jsonify({"status": "success"})
+
+# 🔹 Send Posts List to Moderator GUI
 @app.route('/get_pending_posts', methods=['GET'])
 def get_pending_posts():
-    posts = []
-    for filename in os.listdir(POSTS_FOLDER):
-        if filename.endswith('.json'):
-            with open(os.path.join(POSTS_FOLDER, filename), 'r') as f:
-                post = json.load(f)
-                posts.append(post)
+    with open(DATA_FILE, 'r') as f:
+        posts = json.load(f)
     return jsonify(posts)
 
-# --- Start app ---
+# 🔹 Receive Votes from Moderator GUI
+@app.route('/submit_vote', methods=['POST'])
+def submit_vote():
+    data = request.get_json()
+    post_id = data.get('post_id')
+    moderator = data.get('moderator')
+    vote = data.get('vote')
+
+    with open(DATA_FILE, 'r') as f:
+        posts = json.load(f)
+
+    for post in posts:
+        if post['id'] == post_id:
+            post['votes'][moderator] = vote
+
+            # ✅ Voting Logic
+            votes = post['votes'].values()
+            if list(votes).count("allow") >= 2:
+                print(f"\n✅ APPROVED:\nTitle: {post['title']}\nContent: {post['content']}")
+                # 🟢 Trigger WhatsApp send here if admin
+            elif list(votes).count("deny") >= 2:
+                print(f"\n❌ DENIED:\nTitle: {post['title']}\nContent: {post['content']}")
+            break
+
+    with open(DATA_FILE, 'w') as f:
+        json.dump(posts, f, indent=2)
+
+    return jsonify({"status": "vote recorded"})
+
 if __name__ == '__main__':
     app.run(debug=True)
