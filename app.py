@@ -1,5 +1,6 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
@@ -24,31 +25,26 @@ def submit():
 
     return "Submitted successfully!"
 
-if __name__ == '__main__':
-    app.run(debug=True)
-    from flask import request, jsonify
-import os
-from werkzeug.utils import secure_filename
 
-UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
+# ✅ Route for reviewer GUI app
 @app.route('/submit_post', methods=['POST'])
 def submit_post():
     title = request.form.get('title')
     content = request.form.get('content')
     token = request.form.get('token')
 
-    if token != "reviewer_secret":  # 🔒 change this to something secret later
+    if token != "reviewer_secret":  # 🔐 Secure with real secret later
         return jsonify({"status": "unauthorized"}), 401
 
     file = request.files.get('file')
     filename = None
     if file:
         filename = secure_filename(file.filename)
-        file.save(os.path.join(UPLOAD_FOLDER, filename))
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
-    # For now just print to console (you’ll handle saving later)
     print(f"\n📥 New Submission\nTitle: {title}\nContent: {content}\nFile: {filename}")
     return jsonify({"status": "success"})
 
+
+if __name__ == '__main__':
+    app.run(debug=True)
