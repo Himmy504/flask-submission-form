@@ -1,50 +1,38 @@
-from flask import Flask, render_template, request, jsonify
-from werkzeug.utils import secure_filename
+from flask import Flask, request, jsonify
 import os
 import json
-import datetime
-import pywhatkit as kit
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
 UPLOAD_FOLDER = 'uploads'
-DATA_FILE = 'posts.json'
+POSTS_FILE = 'posts.json'
+REVIEWER_SECRET = "Allah"
+ONLY_ADMIN_CAN_SEND = "Allah"
+GROUP_NAME = "IslamicIQHub"
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-# 🔹 Load or initialize post storage
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, 'w') as f:
+if not os.path.exists(POSTS_FILE):
+    with open(POSTS_FILE, 'w') as f:
         json.dump([], f)
 
-# 🔹 Public form (optional)
-@app.route('/')
-def index():
-    return render_template('form.html')
 
-@app.route('/submit', methods=['POST'])
-def submit():
-    text_data = request.form.get('text')
-    uploaded_file = request.files.get('file')
+def load_posts():
+    with open(POSTS_FILE, 'r') as f:
+        return json.load(f)
 
-    if uploaded_file:
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], uploaded_file.filename)
-        uploaded_file.save(file_path)
+def save_posts(posts):
+    with open(POSTS_FILE, 'w') as f:
+        json.dump(posts, f, indent=4)
 
-    print("Text:", text_data)
-    print("File saved to:", file_path if uploaded_file else "No file uploaded")
 
-    return "Submitted successfully!"
-
-# 🔹 Reviewer Submission (from GUI)
 @app.route('/submit_post', methods=['POST'])
 def submit_post():
     title = request.form.get('title')
     content = request.form.get('content')
     token = request.form.get('token')
 
-    if token != "reviewer_secret":  # 🔐 Secret shared with reviewers
+    if token != REVIEWER_SECRET:
         return jsonify({"status": "unauthorized"}), 401
 
     file = request.files.get('file')
@@ -53,83 +41,87 @@ def submit_post():
         filename = secure_filename(file.filename)
         file.save(os.path.join(UPLOAD_FOLDER, filename))
 
-    with open(DATA_FILE, 'r') as f:
-        posts = json.load(f)
-
-    post_id = str(len(posts) + 1)
-    posts.append({
-        "id": post_id,
+    post = {
+        "id": len(load_posts()),
         "title": title,
         "content": content,
         "file": filename,
-        "votes": {"allow": 0, "deny": 0},
-        "sent": False
-    })
+        "votes": {
+            "allow": 0,
+            "deny": 0
+        },
+        "status": "pending"
+    }
 
-    with open(DATA_FILE, 'w') as f:
-        json.dump(posts, f, indent=2)
+    posts = load_posts()
+    posts.append(post)
+    save_posts(posts)
 
-    print(f"\n📥 New Submission\nTitle: {title}\nContent: {content}\nFile: {filename}")
-    return jsonify({"status": "success", "id": post_id})
+    return jsonify({"status": "success"})
 
 
-# 🔹 Vote Submission
+@app.route('/get_pending_posts', methods=['GET'])
+def get_pending_posts():
+    posts = load_posts()
+    pending = [p for p in posts if p['status'] == 'pending']
+    return jsonify(pending)
+
+
 @app.route('/submit_vote', methods=['POST'])
 def submit_vote():
-    data = request.get_json()
-    post_id = data.get('post_id')
-    vote = data.get('vote')  # "allow" or "deny"
+    post_id = int(request.form.get('post_id'))
+    vote = request.form.get('vote')
+    voter = request.form.get('voter')
+
+    posts = load_posts()
+    if post_id >= len(posts):
+        return jsonify({"status": "post not found"}), 404
 
     if vote not in ["allow", "deny"]:
         return jsonify({"status": "invalid vote"}), 400
 
-    with open(DATA_FILE, 'r') as f:
-        posts = json.load(f)
+    if 'voters' not in posts[post_id]:
+        posts[post_id]['voters'] = {}
 
-    for post in posts:
-        if post['id'] == post_id:
-            post['votes'][vote] += 1
-            break
-    else:
-        return jsonify({"status": "post not found"}), 404
+    if voter in posts[post_id]['voters']:
+        return jsonify({"status": "already voted"}), 400
 
-    with open(DATA_FILE, 'w') as f:
-        json.dump(posts, f, indent=2)
+    posts[post_id]['votes'][vote] += 1
+    posts[post_id]['voters'][voter] = vote
 
-    print(f"🗳️ Vote received: {vote} for post ID {post_id}")
+    allow_votes = posts[post_id]['votes']['allow']
+    deny_votes = posts[post_id]['votes']['deny']
+
+    # Decide when to post or reject
+    if allow_votes >= 2:
+        posts[post_id]['status'] = "approved"
+        print(f"\n✅ POST APPROVED to {GROUP_NAME}:\nTitle: {posts[post_id]['title']}\nContent: {posts[post_id]['content']}")
+    elif deny_votes >= 2:
+        posts[post_id]['status'] = "rejected"
+        print(f"\n❌ POST REJECTED:\nTitle: {posts[post_id]['title']}\nContent: {posts[post_id]['content']}")
+
+    save_posts(posts)
     return jsonify({"status": "vote recorded"})
 
 
-# 🔹 Admin Only: Send Approved Post to WhatsApp Group
-@app.route('/send_to_whatsapp', methods=['POST'])
-def send_to_whatsapp():
-    data = request.get_json()
-    post_id = data.get('post_id')
-    admin_token = data.get('token')
+@app.route('/admin_send', methods=['POST'])
+def admin_send():
+    post_id = int(request.form.get('post_id'))
+    token = request.form.get('token')
 
-    if admin_token != "only_admin_can_send":  # 🔐 Only admin (you)
+    if token != ONLY_ADMIN_CAN_SEND:
         return jsonify({"status": "unauthorized"}), 401
 
-    with open(DATA_FILE, 'r') as f:
-        posts = json.load(f)
+    posts = load_posts()
+    if post_id >= len(posts) or posts[post_id]['status'] != 'approved':
+        return jsonify({"status": "not approved or not found"}), 400
 
-    for post in posts:
-        if post['id'] == post_id and not post.get('sent', False):
-            message = f"*{post['title']}*\n\n{post['content']}"
-            group_name = "My Islamic Group 💫"  # 🔁 Change to your real group name
+    # Simulate WhatsApp group send
+    print(f"\n📤 SENT TO {GROUP_NAME}:\nTitle: {posts[post_id]['title']}\nContent: {posts[post_id]['content']}")
+    posts[post_id]['status'] = "sent"
+    save_posts(posts)
 
-            now = datetime.datetime.now()
-            kit.sendwhatmsg_to_group(group_name, message, now.hour, now.minute + 1)
-
-            post['sent'] = True
-
-            with open(DATA_FILE, 'w') as f:
-                json.dump(posts, f, indent=2)
-
-            print(f"\n📤 SENT TO WHATSAPP GROUP:\n{message}")
-            return jsonify({"status": "sent"})
-
-    return jsonify({"status": "not found or already sent"}), 404
+    return jsonify({"status": "sent"})
 
 
 if __name__ == '__main__':
