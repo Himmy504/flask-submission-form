@@ -3,6 +3,8 @@ import os
 import json
 from werkzeug.utils import secure_filename
 import uuid
+import pywhatkit as kit
+import datetime
 
 app = Flask(__name__)
 
@@ -15,12 +17,12 @@ if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w') as f:
         json.dump([], f)
 
-# 🔹 Reviewer Web Form Route
+# 🔹 Reviewer Web Form (HTML GUI)
 @app.route('/')
 def index():
     return render_template('form.html')
 
-# 🔹 Handle Form Submission from Reviewer Web Page
+# 🔹 Web Form Submission
 @app.route('/submit', methods=['POST'])
 def submit():
     text_data = request.form.get('text')
@@ -37,14 +39,14 @@ def submit():
 
     return "Submitted successfully!"
 
-# 🔹 Reviewer GUI App POST Submission
+# 🔹 Reviewer GUI Submission
 @app.route('/submit_post', methods=['POST'])
 def submit_post():
     title = request.form.get('title')
     content = request.form.get('content')
     token = request.form.get('token')
 
-    if token != "reviewer_secret":  # 🔐 Replace this with real secret later
+    if token != "reviewer_secret":  # 🔐 Secure this
         return jsonify({"status": "unauthorized"}), 401
 
     file = request.files.get('file')
@@ -58,7 +60,8 @@ def submit_post():
         "title": title,
         "content": content,
         "file": filename,
-        "votes": {}  # will store votes by moderator
+        "votes": {},
+        "sent": False
     }
 
     with open(DATA_FILE, 'r') as f:
@@ -72,14 +75,14 @@ def submit_post():
     print(f"\n📥 New Submission\nTitle: {title}\nContent: {content}\nFile: {filename}")
     return jsonify({"status": "success"})
 
-# 🔹 Send Posts List to Moderator GUI
+# 🔹 Fetch All Pending Posts
 @app.route('/get_pending_posts', methods=['GET'])
 def get_pending_posts():
     with open(DATA_FILE, 'r') as f:
         posts = json.load(f)
     return jsonify(posts)
 
-# 🔹 Receive Votes from Moderator GUI
+# 🔹 Moderators Submit Their Vote
 @app.route('/submit_vote', methods=['POST'])
 def submit_vote():
     data = request.get_json()
@@ -94,11 +97,10 @@ def submit_vote():
         if post['id'] == post_id:
             post['votes'][moderator] = vote
 
-            # ✅ Voting Logic
+            # ✅ Vote Logic
             votes = post['votes'].values()
             if list(votes).count("allow") >= 2:
                 print(f"\n✅ APPROVED:\nTitle: {post['title']}\nContent: {post['content']}")
-                # 🟢 Trigger WhatsApp send here if admin
             elif list(votes).count("deny") >= 2:
                 print(f"\n❌ DENIED:\nTitle: {post['title']}\nContent: {post['content']}")
             break
@@ -107,6 +109,38 @@ def submit_vote():
         json.dump(posts, f, indent=2)
 
     return jsonify({"status": "vote recorded"})
+
+# 🔹 Admin Only: Send Approved Post to WhatsApp Group
+@app.route('/send_to_whatsapp', methods=['POST'])
+def send_to_whatsapp():
+    data = request.get_json()
+    post_id = data.get('post_id')
+    admin_token = data.get('token')
+
+    if admin_token != "admin_secret":  # 🔐 Replace with real admin token
+        return jsonify({"status": "unauthorized"}), 401
+
+    with open(DATA_FILE, 'r') as f:
+        posts = json.load(f)
+
+    for post in posts:
+        if post['id'] == post_id and not post.get('sent', False):
+            message = f"*{post['title']}*\n\n{post['content']}"
+            # 📱 Replace this with actual number (MUST be in your WhatsApp contacts)
+            phone_number = "+911234567890"  # <--- CHANGE THIS
+
+            now = datetime.datetime.now()
+            kit.sendwhatmsg(phone_number, message, now.hour, now.minute + 1)
+
+            post['sent'] = True
+
+            with open(DATA_FILE, 'w') as f:
+                json.dump(posts, f, indent=2)
+
+            print(f"\n📤 SENT TO WHATSAPP:\n{message}")
+            return jsonify({"status": "sent"})
+
+    return jsonify({"status": "not found or already sent"}), 404
 
 if __name__ == '__main__':
     app.run(debug=True)
