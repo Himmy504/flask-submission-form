@@ -3,7 +3,7 @@ from tkinter import messagebox
 import requests
 
 # === CONFIG ===
-BACKEND_URL = "https://your-render-url.onrender.com"  # 🔁 Replace this with your actual Render URL
+BACKEND_URL = "https://submission-form-xjdv.onrender.com"  #
 ADMIN_TOKEN = "Allah"
 GROUP_NAME = "IslamicIQHub"
 
