@@ -11,6 +11,7 @@ reviewer_secret = "Allah"
 only_admin_can_send = "Allah"
 group_name = "IslamicIQHub"
 
+# Ensure uploads and data file exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 if not os.path.exists(POSTS_FILE):
     with open(POSTS_FILE, 'w') as f:
@@ -19,6 +20,10 @@ if not os.path.exists(POSTS_FILE):
 @app.route('/')
 def index():
     return render_template('form.html')
+
+@app.route('/moderator')
+def moderator_panel():
+    return render_template('moderator.html')
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
@@ -73,15 +78,17 @@ def submit_vote():
     vote = data.get('vote')
     reviewer = data.get('reviewer')
 
-    if reviewer != reviewer_secret:
-        return jsonify({'success': False, 'message': 'Invalid reviewer'}), 403
+    if not reviewer:
+        return jsonify({'success': False, 'message': 'Reviewer ID required'}), 400
 
     with open(POSTS_FILE, 'r') as f:
         posts = json.load(f)
 
     for post in posts:
         if post['id'] == post_id:
-            post['votes'].append(vote)
+            # Remove previous vote from same reviewer
+            post['votes'] = [v for v in post['votes'] if v.get('reviewer') != reviewer]
+            post['votes'].append({'reviewer': reviewer, 'vote': vote})
             break
     else:
         return jsonify({'success': False, 'message': 'Post not found'}), 404
