@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Reviewer Panel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: sans-serif; padding: 1em; max-width: 600px; margin: auto; }
+        textarea, input, button { width: 100%; margin-top: 10px; padding: 10px; }
+        .file-link { margin: 10px 0; display: block; }
+        .vote-buttons { display: flex; gap: 10px; }
+    </style>
+</head>
+<body>
+    <h2>📋 Review Pending Posts</h2>
+
+    <div id="login-form">
+        <input type="text" id="reviewer" placeholder="Your Name">
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="loadPost()">Login</button>
+    </div>
+
+    <div id="review-panel" style="display:none;">
+        <div id="post-info"></div>
+        <textarea id="editedText" rows="5" placeholder="Edit the text here..."></textarea>
+        <div class="vote-buttons">
+            <button onclick="submitVote('approve')">✅ Approve</button>
+            <button onclick="submitVote('reject')">❌ Reject</button>
+        </div>
+    </div>
+
+    <script>
+        let currentPost = null;
+        let reviewer = "", password = "";
+
+        async function loadPost() {
+            reviewer = document.getElementById("reviewer").value;
+            password = document.getElementById("password").value;
+            const res = await fetch('/pending_posts');
+            const posts = await res.json();
+            currentPost = posts.find(p => !p.votes.some(v => v.reviewer === reviewer));
+            if (currentPost) {
+                document.getElementById("login-form").style.display = "none";
+                document.getElementById("review-panel").style.display = "block";
+                showPost(currentPost);
+            } else {
+                alert("No more posts to review.");
+            }
+        }
+
+        function showPost(post) {
+            let html = `<p><strong>Submitter:</strong> ${post.submitter}</p>`;
+            html += `<p>${post.text}</p>`;
+            if (post.file_url) {
+                html += `<a class="file-link" href="${post.file_url}" target="_blank">📎 View File</a>`;
+            }
+            document.getElementById("post-info").innerHTML = html;
+            document.getElementById("editedText").value = post.text;
+        }
+
+        async function submitVote(vote) {
+            const editedText = document.getElementById("editedText").value;
+            const payload = {
+                post_id: currentPost.id,
+                vote,
+                reviewer,
+                password,
+                edited_text: editedText
+            };
+            const res = await fetch('/submit_vote', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await res.json();
+            alert(result.message);
+            loadPost();
+        }
+    </script>
+</body>
+</html>
