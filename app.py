@@ -7,8 +7,8 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 POSTS_FILE = 'posts.json'
 
-reviewer_secret = "Allah"
-only_admin_can_send = "Allah"
+reviewer_secret = "Allah"  # Reviewer key
+only_admin_can_send = "Allah"  # Admin key
 group_name = "IslamicIQHub"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -19,10 +19,6 @@ if not os.path.exists(POSTS_FILE):
 @app.route('/')
 def index():
     return render_template('form.html')
-
-@app.route('/moderator')
-def moderator():
-    return render_template('moderator.html')
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
