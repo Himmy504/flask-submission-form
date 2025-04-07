@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify, render_template, send_from_directory
 import os
 import json
 from datetime import datetime
+import fitz  # PyMuPDF
+import difflib
+import tempfile
 
 app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
@@ -92,7 +95,7 @@ def submit_vote():
         if post['id'] == post_id:
             post['votes'].append({"reviewer": reviewer, "vote": vote})
             if edited_text:
-                post['final_text'] = edited_text  # Store edited text
+                post['final_text'] = edited_text
             else:
                 post['final_text'] = post.get('final_text', post['text'])
             break
@@ -138,7 +141,37 @@ def text_with_file(post):
         result += f"\n📎 File: {post['file_url']}"
     return result
 
-# ✅ Reviewer web panel route
+@app.route('/compare_pdfs', methods=['POST'])
+def compare_pdfs():
+    file1 = request.files.get('file1')
+    file2 = request.files.get('file2')
+
+    if not file1 or not file2:
+        return jsonify({'success': False, 'message': 'Both files are required'}), 400
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as f1, \
+             tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as f2:
+
+            f1.write(file1.read())
+            f2.write(file2.read())
+            f1_path = f1.name
+            f2_path = f2.name
+
+        doc1 = fitz.open(f1_path)
+        doc2 = fitz.open(f2_path)
+
+        text1 = "\n".join([page.get_text() for page in doc1])
+        text2 = "\n".join([page.get_text() for page in doc2])
+
+        diff = difflib.unified_diff(text1.splitlines(), text2.splitlines(), lineterm="")
+        diff_text = "\n".join(diff)
+
+        return jsonify({'success': True, 'diff': diff_text})
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': f"Comparison failed: {e}"}), 500
+
 @app.route('/reviewer')
 def reviewer_panel():
     return render_template('reviewer.html')
