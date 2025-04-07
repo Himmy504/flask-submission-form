@@ -94,7 +94,6 @@ def submit_vote():
             if edited_text:
                 post['final_text'] = edited_text  # Store edited text
             else:
-                # Ensure final_text has a fallback to original if not already set
                 post['final_text'] = post.get('final_text', post['text'])
             break
     else:
@@ -138,6 +137,11 @@ def text_with_file(post):
     if post['file_url']:
         result += f"\n📎 File: {post['file_url']}"
     return result
+
+# ✅ Reviewer web panel route
+@app.route('/reviewer')
+def reviewer_panel():
+    return render_template('reviewer.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
