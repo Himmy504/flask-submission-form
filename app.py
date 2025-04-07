@@ -7,8 +7,8 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 POSTS_FILE = 'posts.json'
 
-reviewer_secret = "Allah"  # Reviewer key
-only_admin_can_send = "Allah"  # Admin key
+reviewer_secret = "Allah"
+only_admin_can_send = "Allah"
 group_name = "IslamicIQHub"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
