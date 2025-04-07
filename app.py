@@ -7,7 +7,13 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 POSTS_FILE = 'posts.json'
 
-reviewer_secret = "Allah"
+# Reviewer passwords
+reviewer_secrets = {
+    "Labeeb": "Liota",
+    "Suhaib": "Bomb"
+}
+
+# Admin password
 only_admin_can_send = "Allah"
 group_name = "IslamicIQHub"
 
@@ -72,8 +78,10 @@ def submit_vote():
     post_id = data.get('post_id')
     vote = data.get('vote')
     reviewer = data.get('reviewer')
+    password = data.get('password')
 
-    if reviewer != reviewer_secret:
+    # Validate reviewer name and password
+    if reviewer not in reviewer_secrets or reviewer_secrets[reviewer] != password:
         return jsonify({'success': False, 'message': 'Invalid reviewer'}), 403
 
     with open(POSTS_FILE, 'r') as f:
@@ -81,7 +89,7 @@ def submit_vote():
 
     for post in posts:
         if post['id'] == post_id:
-            post['votes'].append(vote)
+            post['votes'].append({"reviewer": reviewer, "vote": vote})
             break
     else:
         return jsonify({'success': False, 'message': 'Post not found'}), 404
