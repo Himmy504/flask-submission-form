@@ -79,6 +79,7 @@ def submit_vote():
     vote = data.get('vote')
     reviewer = data.get('reviewer')
     password = data.get('password')
+    edited_text = data.get('edited_text', '').strip()
 
     # Validate reviewer name and password
     if reviewer not in reviewer_secrets or reviewer_secrets[reviewer] != password:
@@ -90,6 +91,11 @@ def submit_vote():
     for post in posts:
         if post['id'] == post_id:
             post['votes'].append({"reviewer": reviewer, "vote": vote})
+            if edited_text:
+                post['final_text'] = edited_text  # Store edited text
+            else:
+                # Ensure final_text has a fallback to original if not already set
+                post['final_text'] = post.get('final_text', post['text'])
             break
     else:
         return jsonify({'success': False, 'message': 'Post not found'}), 404
@@ -128,7 +134,7 @@ def finalize_post():
     return jsonify({'success': True, 'message': 'Post finalized'})
 
 def text_with_file(post):
-    result = f"📝 *{post['submitter']}* submitted:\n{post['text']}"
+    result = f"📝 *{post['submitter']}* submitted:\n{post.get('final_text', post['text'])}"
     if post['file_url']:
         result += f"\n📎 File: {post['file_url']}"
     return result
