@@ -2,19 +2,23 @@ from flask import Flask, request, jsonify, render_template, send_from_directory,
 import os
 import json
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = 'secure_and_secret_key_here'
+app.secret_key = os.getenv("SECRET_KEY")
 
 UPLOAD_FOLDER = 'uploads'
 POSTS_FILE = 'posts.json'
-REVIEWER_CREDENTIALS = {
-    "Labeeb": "Liota",
-    "Suhaib": "Bomb"
-}
-
+reviewer_secret = "Allah"
 only_admin_can_send = "Allah"
 group_name = "IslamicIQHub"
+
+REVIEWER_CREDENTIALS = {
+    "Labeeb": os.getenv("REVIEWER_LABEEB"),
+    "Suhaib": os.getenv("REVIEWER_SUHAIB")
+}
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 if not os.path.exists(POSTS_FILE):
@@ -64,48 +68,46 @@ def submit_post():
 
     return jsonify({'success': True, 'message': 'Post submitted for review.'})
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
+@app.route('/pending_posts', methods=['GET'])
+def get_pending_posts():
+    with open(POSTS_FILE, 'r') as f:
+        posts = json.load(f)
+    pending = [p for p in posts if p['status'] == 'pending']
+    return jsonify(pending)
+
+@app.route('/moderator', methods=['GET', 'POST'])
+def moderator_login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
         if username in REVIEWER_CREDENTIALS and REVIEWER_CREDENTIALS[username] == password:
             session['reviewer'] = username
-            return redirect(url_for('moderator_page'))
-        else:
-            return render_template('login.html', error="Invalid credentials")
-    return render_template('login.html')
+            return redirect(url_for('moderator_panel'))
+        return render_template('moderator.html', error="Invalid credentials.")
+    return render_template('moderator.html')
 
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
-
-@app.route('/moderator')
-def moderator_page():
+@app.route('/moderator_panel')
+def moderator_panel():
     if 'reviewer' not in session:
-        return redirect(url_for('login'))
-    with open(POSTS_FILE, 'r') as f:
-        posts = json.load(f)
-    pending = [p for p in posts if p['status'] == 'pending']
-    return render_template('moderator.html', posts=pending, reviewer=session['reviewer'])
+        return redirect(url_for('moderator_login'))
+    return render_template('moderator_panel.html', reviewer=session['reviewer'])
 
 @app.route('/submit_vote', methods=['POST'])
 def submit_vote():
-    if 'reviewer' not in session:
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
-
     data = request.json
     post_id = data.get('post_id')
     vote = data.get('vote')
-    reviewer = session['reviewer']
+    reviewer = data.get('reviewer')
+
+    if reviewer not in REVIEWER_CREDENTIALS:
+        return jsonify({'success': False, 'message': 'Invalid reviewer'}), 403
 
     with open(POSTS_FILE, 'r') as f:
         posts = json.load(f)
 
     for post in posts:
         if post['id'] == post_id:
-            post['votes'].append(vote + f" by {reviewer}")
+            post['votes'].append({'reviewer': reviewer, 'vote': vote})
             break
     else:
         return jsonify({'success': False, 'message': 'Post not found'}), 404
