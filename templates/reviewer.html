@@ -8,6 +8,7 @@
         textarea, input, button { width: 100%; margin-top: 10px; padding: 10px; }
         .file-link { margin: 10px 0; display: block; }
         .vote-buttons { display: flex; gap: 10px; }
+        pre { white-space: pre-wrap; background: #f4f4f4; padding: 10px; overflow-x: auto; }
     </style>
 </head>
 <body>
@@ -27,6 +28,13 @@
             <button onclick="submitVote('reject')">❌ Reject</button>
         </div>
     </div>
+
+    <hr>
+    <h3>📄 Compare PDFs</h3>
+    <input type="file" id="pdf1" accept=".pdf">
+    <input type="file" id="pdf2" accept=".pdf">
+    <button onclick="comparePDFs()">Compare PDFs</button>
+    <pre id="pdfDiff">Upload two PDFs to see their differences.</pre>
 
     <script>
         let currentPost = null;
@@ -74,6 +82,34 @@
             const result = await res.json();
             alert(result.message);
             loadPost();
+        }
+
+        async function comparePDFs() {
+            const file1 = document.getElementById("pdf1").files[0];
+            const file2 = document.getElementById("pdf2").files[0];
+            const output = document.getElementById("pdfDiff");
+            output.textContent = "Comparing...";
+
+            if (!file1 || !file2) {
+                output.textContent = "Please select both PDF files.";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file1", file1);
+            formData.append("file2", file2);
+
+            const res = await fetch("/compare_pdfs", {
+                method: "POST",
+                body: formData
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                output.textContent = result.diff || "No differences found.";
+            } else {
+                output.textContent = result.message;
+            }
         }
     </script>
 </body>
